@@ -1,6 +1,6 @@
 # Speculative Decoding for Robot Diffusion Policies
 
-**Paper:** [Speculative Decoding for Robot Diffusion Policies (PDF)](paper/Speculative-Decoding-for-Robot-Diffusion-Policies.pdf)
+**Paper:** [Speculative Decoding for Robot Diffusion Policies (PDF)](Speculative-Decoding-for-Robot-Diffusion-Policies.pdf)
 
 > 1st place (solo). PyData × Cursor Boston Hackathon at Moderna HQ, May 13 2026.
 

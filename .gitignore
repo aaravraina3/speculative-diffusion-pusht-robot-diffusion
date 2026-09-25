@@ -5,5 +5,5 @@ __pycache__/
 .marimo/
 .ipynb_checkpoints/
 
-# Post source and build artifacts stay local; the published version is paper/
+# Post source and build artifacts stay local; the published version is the PDF at the root
 blog/
