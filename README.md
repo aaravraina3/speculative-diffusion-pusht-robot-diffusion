@@ -1,5 +1,7 @@
 # Speculative Decoding for Robot Diffusion Policies
 
+**Paper:** [Speculative Decoding for Robot Diffusion Policies (PDF)](paper/Speculative-Decoding-for-Robot-Diffusion-Policies.pdf)
+
 > 1st place (solo). PyData × Cursor Boston Hackathon at Moderna HQ, May 13 2026.
 
 A port of the LLM-serving optimization technique behind vLLM, Medusa, and EAGLE to robot diffusion policies, applied to `lerobot/diffusion_pusht`. A tiny MLP proposes actions, the diffusion policy verifies them via an L2-distance threshold on action vectors, and accepted frames skip the expensive diffusion call entirely. The result is a Pareto-improving operating point no fixed denoising configuration can reach: diffusion-policy quality at draft-model speed.
