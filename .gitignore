@@ -7,3 +7,9 @@ __pycache__/
 
 # Post source and build artifacts stay local; the published version is the PDF at the root
 blog/
+
+# Only the two v2 results files are published; smoke runs, logs and plan caches stay local
+results/*
+!results/v2_openloop.json
+!results/v2_closed.json
+.pytest_cache/

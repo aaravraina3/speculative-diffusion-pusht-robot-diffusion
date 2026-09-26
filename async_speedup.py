@@ -1,4 +1,11 @@
-"""Measure a real wall-clock speedup for the speculative serving loop.
+"""Superseded by spec_eval.py and PAPER.pdf. Kept for the record.
+
+This script decides which boundaries to skip from a first pass that already ran
+the verifier, so its "measured" speedup assumes a gate that knows the verifier's
+answer for free. It also evaluates on episodes 0-2, which the draft trained on.
+The paper, section 1, explains both problems. The original docstring follows.
+
+Measure a real wall-clock speedup for the speculative serving loop.
 
 The notebook reports a *projected* 2.02x: it times the MLP draft and the
 diffusion verifier per frame, then combines them with a cost model that assumes
