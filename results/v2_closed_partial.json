@@ -1,0 +1,141 @@
+{
+  "note": "Partial closed-loop run: 11 of 14 strategies finished before the run was stopped. closed_loop.py only writes per-rollout records at the end, so these numbers come from its progress log: success counts out of 50 (Wilson intervals from the counts) and mean best coverage. There are no paired tests or coverage intervals. Seeds 200000-200049, same for every strategy. Gate thresholds are validation quantiles 0.1 of results/v2_openloop.json.",
+  "command": "closed_loop.py --from results/v2_openloop.json --rollouts 50",
+  "unfinished": [
+    "all three gates at validation quantile 0.5"
+  ],
+  "summary": [
+    {
+      "strategy": "verifier DDPM-20/chunk8 (reference)",
+      "rollouts": 50,
+      "successes": 24,
+      "success": 0.48,
+      "success_ci": [
+        0.3479713519089993,
+        0.6148825520981452
+      ],
+      "mean_best_coverage": 0.9,
+      "wall_seconds": 454
+    },
+    {
+      "strategy": "verifier DDPM-10/chunk8",
+      "rollouts": 50,
+      "successes": 26,
+      "success": 0.52,
+      "success_ci": [
+        0.38511744790185476,
+        0.6520286480910008
+      ],
+      "mean_best_coverage": 0.902,
+      "wall_seconds": 244
+    },
+    {
+      "strategy": "verifier DDPM-5/chunk8",
+      "rollouts": 50,
+      "successes": 25,
+      "success": 0.5,
+      "success_ci": [
+        0.3664451421899842,
+        0.6335548578100159
+      ],
+      "mean_best_coverage": 0.879,
+      "wall_seconds": 128
+    },
+    {
+      "strategy": "verifier DDIM-10/chunk8",
+      "rollouts": 50,
+      "successes": 31,
+      "success": 0.62,
+      "success_ci": [
+        0.4815044682285895,
+        0.741372107728543
+      ],
+      "mean_best_coverage": 0.901,
+      "wall_seconds": 224
+    },
+    {
+      "strategy": "verifier DDIM-5/chunk8",
+      "rollouts": 50,
+      "successes": 32,
+      "success": 0.64,
+      "success_ci": [
+        0.5014101676670928,
+        0.7586125042828953
+      ],
+      "mean_best_coverage": 0.874,
+      "wall_seconds": 116
+    },
+    {
+      "strategy": "verifier DDPM-20/chunk12",
+      "rollouts": 50,
+      "successes": 27,
+      "success": 0.54,
+      "success_ci": [
+        0.40398871297392647,
+        0.6703034790117844
+      ],
+      "mean_best_coverage": 0.906,
+      "wall_seconds": 402
+    },
+    {
+      "strategy": "verifier DDPM-20/chunk15",
+      "rollouts": 50,
+      "successes": 32,
+      "success": 0.64,
+      "success_ci": [
+        0.5014101676670928,
+        0.7586125042828953
+      ],
+      "mean_best_coverage": 0.904,
+      "wall_seconds": 407
+    },
+    {
+      "strategy": "draft only",
+      "rollouts": 50,
+      "successes": 0,
+      "success": 0.0,
+      "success_ci": [
+        0.0,
+        0.07134760017861413
+      ],
+      "mean_best_coverage": 0.086,
+      "wall_seconds": 36
+    },
+    {
+      "strategy": "gate: needs verifier (notebook rule) @ tau=7.72 (val q=0.1)",
+      "rollouts": 50,
+      "successes": 11,
+      "success": 0.22,
+      "success_ci": [
+        0.1275391591451957,
+        0.35241549695482816
+      ],
+      "mean_best_coverage": 0.802,
+      "wall_seconds": 1002
+    },
+    {
+      "strategy": "gate: previous agreement @ tau=7.72 (val q=0.1)",
+      "rollouts": 50,
+      "successes": 27,
+      "success": 0.54,
+      "success_ci": [
+        0.40398871297392647,
+        0.6703034790117844
+      ],
+      "mean_best_coverage": 0.879,
+      "wall_seconds": 573
+    },
+    {
+      "strategy": "gate: draft ensemble @ tau=1.27 (val q=0.1)",
+      "rollouts": 50,
+      "successes": 17,
+      "success": 0.34,
+      "success_ci": [
+        0.2243694914541036,
+        0.478461740603053
+      ],
+      "mean_best_coverage": 0.544,
+      "wall_seconds": 247
+    }
+  ]
+}
