@@ -1,6 +1,6 @@
 # Speculative Decoding for Robot Diffusion Policies
 
-**Read the paper: [A draft model for a robot diffusion policy, revisited (PDF)](PAPER.pdf)**
+**Read the paper: [Speeding up a robot diffusion policy: a draft model versus fewer denoising steps (PDF)](PAPER.pdf)**
 
 > 1st place (solo). PyData × Cursor Boston Hackathon at Moderna HQ, May 13 2026.
 
@@ -10,7 +10,7 @@ What the second version found:
 
 - **The original rule saves nothing.** It needs the verifier's action to decide whether to skip the verifier, so it pays for every call. It worked as a model cascade.
 - **Gates that decide without the verifier do skip calls,** but they more than quadruple the action error on the way to 2x.
-- **Fewer denoising steps get the speedup with no draft.** DDPM or DDIM at 10 or 5 steps instead of 20 runs 2x to 3.9x faster and stays within noise of 20 steps in open loop. In the simulator they succeed about as often as 20 steps (48% to 64% over 50 rollouts, within noise), while the original rule cuts success from 48% to 22%.
+- **Fewer denoising steps get the speedup with no draft.** DDPM or DDIM at 10 or 5 steps instead of 20 runs 2x to 3.9x faster and stays within noise of 20 steps in open loop. In the simulator they succeed about as often as 20 steps (48% to 64% over 50 rollouts, within noise), while the original rule, at a threshold where it serves the draft on some plans, cuts success from 48% to 22%.
 - **Executing more actions per plan costs accuracy.** 15 actions instead of 8 adds about 27% error after the first plan of each episode.
 - **The speculative-decoding idea that does carry over works inside the denoising chain,** and De Bortoli et al. (2025) already did it on PushT.
 
