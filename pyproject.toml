@@ -2,7 +2,7 @@
 name = "speculative-diffusion-pusht"
 version = "0.2.0"
 description = "Speculative serving for lerobot/diffusion_pusht, with a held-out, paired evaluation (spec_eval.py)"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 # Pinned to the environment the results were produced in.
 dependencies = [
     "lerobot==0.4.4",

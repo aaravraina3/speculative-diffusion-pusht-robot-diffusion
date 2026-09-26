@@ -12,4 +12,6 @@ blog/
 results/*
 !results/v2_openloop.json
 !results/v2_closed.json
+!results/v2_closed_partial.json
+!results/environment.txt
 .pytest_cache/

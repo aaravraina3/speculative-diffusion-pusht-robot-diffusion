@@ -20,8 +20,8 @@ demonstrations, so it measures agreement with the demonstrator and says nothing
 about task success. The verifier checkpoint was trained on every pusht episode,
 test split included. Only the draft is held out.
 
-    .venv/bin/python spec_eval.py --max-episodes 2          # smoke test on this machine
-    .venv/bin/python spec_eval.py --device cuda --samples 8 # full run on the GPU
+    uv run spec_eval.py --max-episodes 2                  # smoke test
+    uv run spec_eval.py --out results/repro_openloop.json  # the paper's settings (4 samples)
 """
 import compat  # noqa: F401  (patches argparse/pyarrow for lerobot; must come first)
 
@@ -42,6 +42,10 @@ import torch.nn as nn
 import stats
 
 DEADLINE_MS = 100.0  # pusht runs at 10 Hz
+# Most open-loop error sits in each episode's first plan, which every sampler shares a hard
+# start for (the demonstrator moves fastest there). Frames from LATE_FROM on are past the first
+# plan for every chunk length tested. Reported as a sensitivity analysis, added after review.
+LATE_FROM = 16
 ROOT = pathlib.Path(__file__).resolve().parent
 
 
@@ -127,13 +131,15 @@ def draft_outputs(drafts: list[StateMlp], states: np.ndarray) -> tuple[np.ndarra
 # ------------------------------------------------------------------- verifier
 
 def pick_device(name: str) -> torch.device:
-    if name != "auto":
-        return torch.device(name)
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
+    device = torch.device(name) if name != "auto" else (
+        torch.device("cuda") if torch.cuda.is_available() else
+        torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu"))
+    if device.type == "cuda":  # deterministic kernels and full fp32, so reruns match each other
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cuda.matmul.allow_tf32 = False
+    return device
 
 
 def sync(device: torch.device) -> None:
@@ -441,7 +447,8 @@ def cluster_bootstrap(values: np.ndarray, weights: np.ndarray, B: int = 10_000, 
 
 
 def evaluate(strategy: str, per_episode: list[dict], ref: dict | None, chunk: int,
-             latency: np.ndarray | None = None, margin: float | None = None, max_chunk: int = 15) -> dict:
+             latency: np.ndarray | None = None, margin: float | None = None, max_chunk: int = 15,
+             margin_frac: float = 0.05) -> dict:
     """Aggregate one strategy over episodes. Each per_episode entry holds mse (K,),
     bias2, var, frames, calls, draft_frames and ms. `latency` is the benchmarked call
     times of the sampler this strategy calls, or None if it never calls one. `margin`
@@ -464,6 +471,7 @@ def evaluate(strategy: str, per_episode: list[dict], ref: dict | None, chunk: in
         "bias2": stats.weighted_mean(np.array([e["bias2"] for e in per_episode]), frames),
         "sample_var": stats.weighted_mean(np.array([e["var"] for e in per_episode]), frames),
         "draft_fraction": float(sum(e["draft_frames"] for e in per_episode) / frames.sum()),
+        "per_episode_mse": {int(e["episode"]): float(np.mean(e["mse"])) for e in per_episode},
         "verifier_calls_per_frame": float(calls.sum() / frames.sum()),
         "ms_per_frame": ms_per_frame,
         "p95_call_ms": float(np.percentile(latency, 95)) if called else 0.0,
@@ -491,6 +499,17 @@ def evaluate(strategy: str, per_episode: list[dict], ref: dict | None, chunk: in
         vd, vlo, vhi = cluster_bootstrap(vdiff, frames)
         out["sample_var_vs_ref"], out["sample_var_vs_ref_ci"] = vd, [vlo, vhi]
         out["speedup_vs_ref"] = ref["ms_per_frame"] / out["ms_per_frame"] if out["ms_per_frame"] else float("inf")
+        out["episodes_worse"] = int(np.sum(diff > 0))
+        late_frames = frames - LATE_FROM
+        late = np.array([e["mse_late"] for e in per_episode])
+        ref_late = np.array([by_ep[e["episode"]]["mse_late"] for e in per_episode])
+        ld, llo, lhi = cluster_bootstrap(late - ref_late, late_frames)
+        _, lup = stats.bca_cluster(late - ref_late, late_frames, levels=(0.95,))
+        ref_late_mean = stats.weighted_mean(ref_late, late_frames)
+        out["late"] = {"from_frame": LATE_FROM, "mse": stats.weighted_mean(late, late_frames),
+                       "ref_mse": ref_late_mean, "vs_ref": ld, "vs_ref_ci": [llo, lhi], "vs_ref_upper95": lup,
+                       "margin": margin_frac * ref_late_mean, "noninferior": bool(lup <= margin_frac * ref_late_mean),
+                       "episodes_worse": int(np.sum(late > ref_late))}
     return out
 
 
@@ -525,6 +544,8 @@ def run_strategy(eps: list[Episode], caches: dict, drafts_out: dict, make_decide
         n_calls = float(np.mean(calls))
         ms = n_calls * call_ms + (draft_ms * ep.length if uses_draft else 0.0)
         results.append({"episode": ep.index, "frames": ep.length, "mse": np.array(mses),
+                        "mse_late": float(np.mean([np.mean(mse_per_frame(sv[LATE_FROM:], ep.actions[LATE_FROM:]))
+                                                   for sv in all_served])),
                         "bias2": float(np.mean(mse_per_frame(centre, ep.actions))),
                         "var": float(np.mean((all_served - centre) ** 2)),
                         "calls": n_calls, "ms": ms, "draft_frames": float(np.mean(draft_frames))})
@@ -540,7 +561,7 @@ def analyze(args, splits, samplers, v_eps, v_drafts, v_cache, t_eps, t_drafts, t
     call_ms = {s: float(np.median(v)) for s, v in latency.items()}
     ref_ms = call_ms[ref_sampler]
     use_verifier, use_draft = (lambda d, s: always("verifier")), (lambda d, s: always("draft"))
-    ev = functools.partial(evaluate, max_chunk=max_chunk)
+    ev = functools.partial(evaluate, max_chunk=max_chunk, margin_frac=args.max_quality_loss)
 
     # ---- validation: pick each gate's threshold without looking at test.
     ref_val = ev("reference", run_strategy(v_eps, v_cache, v_drafts, use_verifier, ref_chunk,
@@ -615,11 +636,15 @@ def analyze(args, splits, samplers, v_eps, v_drafts, v_cache, t_eps, t_drafts, t
         "splits": splits,
         "samples_per_boundary": samples,
         "val_reference_mse": ref_val["mse"],
+        "val_draft_mse": stats.weighted_mean(
+            np.array([np.mean(mse_per_frame(v_drafts[e.index][0], e.actions)) for e in v_eps]),
+            np.array([e.length for e in v_eps], dtype=float)),
         "chosen_tau": chosen,
         "closest_to_budget": closest,
         "noninferiority_margin": margin,
         "quantiles": quantiles.tolist(),
         "max_chunk": max_chunk,
+        "error_by_plan_offset": plan_offset_error(t_eps, t_caches, samplers),
         "latency_ms": {s.name: {"median": call_ms[s], "p95": float(np.percentile(v, 95)), "max": float(np.max(v)),
                                 "n": len(v), "draft_ms_per_frame": draft_ms}
                        for s, v in latency.items()},
@@ -632,6 +657,26 @@ def analyze(args, splits, samplers, v_eps, v_drafts, v_cache, t_eps, t_drafts, t
     return record, summary
 
 
+def plan_offset_error(eps: list, caches: dict, samplers: list) -> dict | None:
+    """Pooled error of the longest-chunk sampler's actions by how far into the plan they are,
+    for frames from LATE_FROM on. A pipelined loop executes actions further into each plan,
+    since the plan was made from an older observation."""
+    longest = max(samplers, key=lambda s: s.chunk)
+    if longest.chunk <= samplers[0].chunk:
+        return None
+    sq = np.zeros(longest.chunk)
+    n = np.zeros(longest.chunk)
+    for ep in eps:
+        for b, plans in caches[longest][ep.index]["chunks"].items():
+            for o in range(plans.shape[1]):
+                if b + o >= LATE_FROM:
+                    sq[o] += float(np.mean((plans[:, o] - ep.actions[b + o]) ** 2))
+                    n[o] += 1
+    per = (sq / np.maximum(n, 1)).tolist()
+    return {"sampler": longest.name, "from_frame": LATE_FROM, "mse_by_offset": per,
+            "windows": {f"{a}-{a + 7}": float(np.mean(per[a:a + 8])) for a in range(longest.chunk - 7)}}
+
+
 def print_summary(summary: list) -> None:
     print(f"\n{'strategy':48} {'MSE':>7} {'vs ref [95% CI]':>24} {'1-sided 95%':>11} {'calls/fr':>9} "
           f"{'ms/fr':>7} {'speedup':>8} {'max call':>9}")
@@ -642,6 +687,39 @@ def print_summary(summary: list) -> None:
         sp = f"{r['speedup_vs_ref']:.2f}x" if "speedup_vs_ref" in r else "1.00x"
         print(f"{r['strategy']:48} {r['mse']:7.1f} {vs:>24} {up:>11} {r['verifier_calls_per_frame']:9.3f} "
               f"{r['ms_per_frame']:7.1f} {sp:>8} {r['max_call_ms']:9.0f}")
+
+
+MODEL_REPO, DATA_REPO = "lerobot/diffusion_pusht", "lerobot/pusht"
+
+
+def code_provenance() -> dict:
+    """Package versions that change results, hashes of the scripts, and whether the tree was dirty."""
+    import hashlib
+    from importlib import metadata
+    pkgs = {}
+    for name in ("torch", "lerobot", "diffusers", "numpy", "gym-pusht", "pymunk", "pygame", "opencv-python",
+                 "opencv-python-headless", "torchcodec", "av"):
+        try:
+            pkgs[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            pkgs[name] = None
+    scripts = {f.name: hashlib.sha256(f.read_bytes()).hexdigest()[:16]
+               for f in sorted(ROOT.glob("*.py")) if not f.name.startswith("test_")}
+    try:
+        dirty = bool(subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain", "--", "*.py"],
+                                             text=True).strip())
+    except Exception:  # not a git checkout
+        dirty = None
+    revisions = {}
+    try:  # which Hugging Face snapshot was loaded
+        from huggingface_hub import scan_cache_dir
+        for repo in scan_cache_dir().repos:
+            if repo.repo_id in (MODEL_REPO, DATA_REPO):
+                revisions[repo.repo_id] = sorted(r.commit_hash for r in repo.revisions)
+    except Exception:  # cache not readable; leave it out rather than fail the run
+        pass
+    return {"packages": pkgs, "script_sha256": scripts, "uncommitted_script_changes": dirty,
+            "hf_snapshots": revisions}
 
 
 def load_from_cache(path: pathlib.Path, samplers_spec: str):
@@ -678,7 +756,7 @@ def main() -> None:
     ap.add_argument("--device", default="auto")
     ap.add_argument("--split", default="0:150,150:170,170:206", help="train,val,test episode ranges")
     ap.add_argument("--max-episodes", type=int, default=None, help="cap val and test episodes (smoke tests)")
-    ap.add_argument("--samples", type=int, default=1, help="diffusion samples per boundary")
+    ap.add_argument("--samples", type=int, default=4, help="diffusion samples per boundary (the paper used 4)")
     ap.add_argument("--samplers", default="DDPM:20:8,DDPM:10:8,DDPM:5:8,DDIM:10:8,DDIM:5:8,DDPM:20:12,DDPM:20:15",
                     help="scheduler:steps:chunk, first one is the reference and the verifier for the gates")
     ap.add_argument("--draft-members", type=int, default=5)
@@ -709,7 +787,7 @@ def main() -> None:
                                   latency, draft_ms, samples, prev.get("max_chunk", 15))
         record["config"] = dict(prev["config"], max_quality_loss=args.max_quality_loss)
         record["provenance"] = dict(prev.get("provenance", {}), recomputed_from=args.from_cache,
-                                    recompute_git=git_sha())
+                                    recompute_git=git_sha(), recompute_code=code_provenance())
         print_summary(summary)
         out = pathlib.Path(args.out) if args.out else pathlib.Path(args.from_cache.replace(".cache.pkl", ".json"))
         out.write_text(json.dumps(record, indent=2, default=float))
@@ -778,6 +856,7 @@ def main() -> None:
         "device_name": torch.cuda.get_device_name() if device.type == "cuda" else platform.processor(),
         "threads": torch.get_num_threads(), "machine": platform.machine(),
         "verifier_trained_on_test": True,
+        "code": code_provenance(),
     }
     out = pathlib.Path(args.out) if args.out else ROOT / "results" / f"spec_eval_{time.strftime('%Y%m%d_%H%M%S')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -12,8 +12,8 @@ paired by starting position. Once trajectories diverge nothing else is shared.
 Gates are the functions from spec_eval.py, wrapped so that a gate which reads the
 verifier's plan at a boundary without paying for that call raises.
 
-    .venv/bin/python closed_loop.py --from results/v2_openloop.json --rollouts 100
-    .venv/bin/python closed_loop.py --summarize results/v2_closed.json   # recompute stats only
+    uv run closed_loop.py --from results/v2_openloop.json --out results/repro_closed.json
+    uv run closed_loop.py --summarize results/v2_closed.json   # recompute stats only
 """
 import compat  # noqa: F401  (must precede lerobot)
 
@@ -217,7 +217,7 @@ def main() -> None:
     ap.add_argument("--from", dest="source", help="spec_eval.py results JSON (thresholds, latency, split)")
     ap.add_argument("--summarize", default=None, help="recompute the summary of an existing closed-loop JSON")
     ap.add_argument("--device", default="auto")
-    ap.add_argument("--rollouts", type=int, default=100)
+    ap.add_argument("--rollouts", type=int, default=50, help="rollouts per strategy (the paper used 50)")
     ap.add_argument("--seed0", type=int, default=200_000, help="first environment seed")
     ap.add_argument("--max-steps", type=int, default=300)
     ap.add_argument("--gate-quantiles", default="0.1,0.5",
@@ -232,6 +232,7 @@ def main() -> None:
         rec = json.loads(path.read_text())
         rec["summary"] = summarize_all(rec["results"], rec["latency_ms"], rec["draft_ms_per_frame"])
         rec.setdefault("provenance", {})["summarized_git"] = git_sha()
+        rec["provenance"]["summarized_code"] = se.code_provenance()
         path.write_text(json.dumps(rec, indent=2, default=float))
         print_table(rec["summary"])
         print(f"rewrote {path}")
@@ -305,7 +306,8 @@ def main() -> None:
     import lerobot
     record = {
         "config": vars(args),
-        "provenance": {"git": git_sha(), "python": platform.python_version(), "torch": torch.__version__,
+        "provenance": {"git": git_sha(), "code": se.code_provenance(),
+                       "python": platform.python_version(), "torch": torch.__version__,
                        "lerobot": getattr(lerobot, "__version__", None), "device": str(device),
                        "gym_pusht": getattr(gp, "__version__", None), "source": args.source},
         "taus": {str(q): t for q, t in taus.items()},
